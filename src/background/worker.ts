@@ -83,6 +83,12 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       return true;
     }
 
+    if (request.action === "ping") {
+      // Health check - respond immediately
+      sendResponse({ success: true, ready: true });
+      return true;
+    }
+
     if (request.action === "textSelected") {
       // Store the selected text for the popup to access
       if (!request.text || typeof request.text !== "string") {
@@ -199,6 +205,36 @@ chrome.runtime.onInstalled.addListener((details) => {
       version: CONFIG.EXTENSION.VERSION,
     });
   }
+});
+
+// Keep service worker alive
+let keepAliveInterval: number | undefined;
+
+function keepAlive() {
+  if (keepAliveInterval) {
+    clearInterval(keepAliveInterval);
+  }
+  keepAliveInterval = setInterval(() => {
+    loggerBackground.debug("Keep-alive ping");
+  }, 20000) as unknown as number; // Ping every 20 seconds
+}
+
+// Start keep-alive on startup
+keepAlive();
+
+// Restart keep-alive on extension startup
+chrome.runtime.onStartup.addListener(() => {
+  loggerBackground.info("Extension started");
+  keepAlive();
+});
+
+// Connection handler for content scripts
+chrome.runtime.onConnect.addListener((port) => {
+  loggerBackground.debug("Port connected", { name: port.name });
+
+  port.onDisconnect.addListener(() => {
+    loggerBackground.debug("Port disconnected", { name: port.name });
+  });
 });
 
 loggerBackground.info("Background service worker initialized", {

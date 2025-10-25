@@ -38,6 +38,32 @@ function App() {
     "info"
   );
   const [showToast, setShowToast] = useState(false);
+  const [extensionReady, setExtensionReady] = useState(false);
+
+  // Check if extension is ready on mount
+  useEffect(() => {
+    const checkExtensionReady = async () => {
+      try {
+        if (!chrome.runtime?.id) {
+          console.error("Chrome runtime not available");
+          return;
+        }
+
+        // Try to ping the background worker
+        const response = await chrome.runtime.sendMessage({ action: "ping" });
+        if (response) {
+          setExtensionReady(true);
+          console.log("Extension is ready");
+        }
+      } catch (error) {
+        console.error("Extension not ready:", error);
+        // Retry after a short delay
+        setTimeout(checkExtensionReady, 1000);
+      }
+    };
+
+    checkExtensionReady();
+  }, []);
 
   useEffect(() => {
     // Listen for messages from background worker
@@ -95,13 +121,23 @@ function App() {
     document.addEventListener("touchend", handleTextSelection);
 
     // Send selected text to popup through message
-    if (selectedText) {
-      chrome.runtime.sendMessage(
-        { action: "textSelected", text: selectedText },
-        (_response) => {
-          // Response handling
-        }
-      );
+    if (selectedText && chrome.runtime?.id) {
+      try {
+        chrome.runtime.sendMessage(
+          { action: "textSelected", text: selectedText },
+          (_response) => {
+            // Response handling - silently fail if extension context is invalid
+            if (chrome.runtime.lastError) {
+              console.warn(
+                "Failed to send textSelected message:",
+                chrome.runtime.lastError
+              );
+            }
+          }
+        );
+      } catch (error) {
+        console.warn("Error sending textSelected message:", error);
+      }
     }
 
     return () => {
@@ -124,8 +160,27 @@ function App() {
   const handleShare = async () => {
     if (!selectedText) return;
 
+    // Check if extension is ready
+    if (!extensionReady) {
+      showToastMessage(
+        "Extension is initializing. Please wait a moment and try again.",
+        "error"
+      );
+      return;
+    }
+
     setIsLoading(true);
     try {
+      // Check if extension context is valid
+      if (!chrome.runtime?.id) {
+        showToastMessage(
+          "Extension context invalid. Please reload the page.",
+          "error"
+        );
+        setIsLoading(false);
+        return;
+      }
+
       const response = await chrome.runtime.sendMessage({
         action: "createShareLink",
         text: selectedText,
@@ -135,13 +190,52 @@ function App() {
         setShareLink(response.link);
       } else {
         showToastMessage(
-          "Failed to create share link. Please try again.",
+          response?.error || "Failed to create share link. Please try again.",
           "error"
         );
       }
     } catch (error) {
       console.error("Error creating share link:", error);
-      showToastMessage("Error creating share link. Please try again.", "error");
+
+      // Handle specific Chrome extension errors
+      if (error instanceof Error) {
+        if (error.message.includes("Extension context invalidated")) {
+          showToastMessage(
+            "Extension was reloaded. Please refresh this page.",
+            "error"
+          );
+        } else if (error.message.includes("message port closed")) {
+          showToastMessage(
+            "Connection lost. Please refresh the page.",
+            "error"
+          );
+        } else if (error.message.includes("Receiving end does not exist")) {
+          showToastMessage(
+            "Extension not ready. Please refresh the page.",
+            "error"
+          );
+          // Try to reconnect
+          setExtensionReady(false);
+          setTimeout(async () => {
+            try {
+              await chrome.runtime.sendMessage({ action: "ping" });
+              setExtensionReady(true);
+            } catch (e) {
+              console.error("Failed to reconnect:", e);
+            }
+          }, 1000);
+        } else {
+          showToastMessage(
+            "Error creating share link. Please try again.",
+            "error"
+          );
+        }
+      } else {
+        showToastMessage(
+          "Error creating share link. Please try again.",
+          "error"
+        );
+      }
     } finally {
       setIsLoading(false);
     }

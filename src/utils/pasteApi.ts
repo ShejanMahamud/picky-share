@@ -120,7 +120,7 @@ export async function uploadToPaste(text: string): Promise<PasteResponse> {
         };
       }
 
-      const shareLink = `${PASTE_API_URL}${pasteId}`;
+      const shareLink = `${PASTE_API_URL}${pasteId}.md`;
       loggerApi.info("Paste uploaded successfully", {
         pasteId,
         partial: isPartial,
