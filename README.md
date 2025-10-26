@@ -2,6 +2,10 @@
 
 **Picky Share** is a Chrome extension that allows you to select text from any webpage and instantly create a shareable public URL using the [paste.rs](https://paste.rs/) service.
 
+## Demo
+
+![Picky Share demo](public/demo.gif)
+
 ## Features
 
 - **Easy Text Sharing**: Select any text on a webpage to create a shareable link

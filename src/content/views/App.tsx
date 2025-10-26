@@ -96,27 +96,37 @@ function App() {
 
     chrome.runtime.onMessage.addListener(handleMessage);
 
+    let selectionTimeout: number | null = null;
+
     // Listen for text selection
     const handleTextSelection = () => {
-      // Don't reset selection if we're showing the share link (user might be clicking copy)
-      if (shareLink) {
-        return;
+      // Clear any pending timeout
+      if (selectionTimeout) {
+        clearTimeout(selectionTimeout);
       }
 
-      const selected = window.getSelection()?.toString().trim();
+      // Add a small delay to ensure selection state is settled
+      selectionTimeout = setTimeout(() => {
+        const selected = window.getSelection()?.toString().trim();
 
-      if (selected && selected.length > 0) {
-        setSelectedText(selected);
-        setShowShareButton(true);
-        setShareLink("");
-        setCopied(false);
-        // No toast on selection - just show the button
-      } else {
-        setShowShareButton(false);
-      }
+        if (selected && selected.length > 0) {
+          setSelectedText(selected);
+          setShowShareButton(true);
+          setShareLink("");
+          setCopied(false);
+        } else {
+          // Text was deselected - hide everything
+          setShowShareButton(false);
+          setSelectedText("");
+          setShareLink("");
+          setCopied(false);
+        }
+      }, 10); // Small delay to let selection state settle
     };
 
-    // Listen for mouse up events to detect text selection
+    // Listen for selection changes
+    document.addEventListener("selectionchange", handleTextSelection);
+    // Also listen for mouse up events as a fallback
     document.addEventListener("mouseup", handleTextSelection);
     document.addEventListener("touchend", handleTextSelection);
 
@@ -141,7 +151,11 @@ function App() {
     }
 
     return () => {
+      if (selectionTimeout) {
+        clearTimeout(selectionTimeout);
+      }
       chrome.runtime.onMessage.removeListener(handleMessage);
+      document.removeEventListener("selectionchange", handleTextSelection);
       document.removeEventListener("mouseup", handleTextSelection);
       document.removeEventListener("touchend", handleTextSelection);
     };
@@ -252,8 +266,11 @@ function App() {
       // Auto-hide the button after copying
       setTimeout(() => {
         setCopied(false);
-        setShareLink(""); // Clear the link to hide the container
-        setShowShareButton(false); // Hide the button
+        setShareLink("");
+        setShowShareButton(false);
+        setSelectedText(""); // Also clear the selected text
+        // Clear any text selection in the document
+        window.getSelection()?.removeAllRanges();
       }, 2000);
     } catch (error) {
       console.error("Failed to copy:", error);
